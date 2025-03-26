@@ -175,3 +175,4 @@ cython_debug/
 
 # Data files
 List1/connection_graph.csv
+List1/data.*
