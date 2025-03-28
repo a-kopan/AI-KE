@@ -2,7 +2,7 @@ from commons import *
 
 def main():
     start_station = "KRZYKI"
-    end_station = "Wawrzyniaka"
+    end_station = "Chłodna"
     start_time = datetime.strptime("8:00:00 PM", TIME_FORMAT)
 
     graph = load_graph()
