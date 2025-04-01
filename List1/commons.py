@@ -1,7 +1,7 @@
 import csv
 import heapq
 from datetime import datetime, timedelta
-from time import time
+from time import time, mktime
 import logging 
 import math
 
@@ -170,120 +170,90 @@ class Graph:
             return self.dijkstra_t(starting_stop, ending_stop, start_time)
         else:
             raise ValueError("Invalid optimization criterion")
-    
-    def heuristic(self, node: Node, target: Node) -> timedelta:
-        """
-        Compute an admissible heuristic (estimated travel time) based on the Haversine distance.
-        """
-        # Convert lat/lon to floats (in case they are not already)
-        lat1, lon1 = float(node.lat), float(node.lon)
-        lat2, lon2 = float(target.lat), float(target.lon)
-        R = 6371000  # Earth's radius in meters
-        phi1 = math.radians(lat1)
-        phi2 = math.radians(lat2)
-        delta_phi = math.radians(lat2 - lat1)
-        delta_lambda = math.radians(lon2 - lon1)
-        a = math.sin(delta_phi / 2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda / 2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        distance = R * c  # in meters
         
-        # Assume an average speed (m/s) to convert distance into time. Here, 11.11 m/s is about 40 km/h.
-        avg_speed = 11.11  # m/s
-        seconds = distance / avg_speed
-        return timedelta(seconds=seconds)
+    def heuristic(self, node: Node, goal: Node, average_speed: float = 30) -> float:
+        lat1, lon1 = math.radians(float(node.lat)), math.radians(float(node.lon))
+        lat2, lon2 = math.radians(float(goal.lat)), math.radians(float(goal.lon))
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        c = 2 * math.asin(math.sqrt(a))
+        R = 6371
+        distance = R * c  # distance in km
+        estimated_time_sec = (distance / average_speed) * 3600
+        return estimated_time_sec
 
-    def a_star_t(self, starting_stop_name, ending_stop_name, start_time):
-        time_start = time()
-        
-        starting_stop = None
-        ending_stop = None
-        
-        # Find starting and ending nodes by name
+    def a_star_t(self, starting_stop_name_and_company: str, ending_stop_name_and_company: str, start_time: datetime):
         for node in self.nodes:
-            if node.name == starting_stop_name:
+            if node.name == starting_stop_name_and_company[0] and node.company == starting_stop_name_and_company[1]:
                 starting_stop = node
-            if node.name == ending_stop_name:
-                ending_stop = node
-
-        if not starting_stop or not ending_stop:
-            logger.error("STARTING AND/OR ENDING STOP NOT FOUND")
+            if node.name == ending_stop_name_and_company[0] and node.company == ending_stop_name_and_company[1]:
+                goal_stop = node
+                
+        if not starting_stop or not goal_stop:
+            logger.info("STARTING AND/OR ENDING STOP NOT FOUND")
             return None
         
         visited = set()
-        
-        # Best (minimum) arrival times for nodes
         arrival_times = {node: None for node in self.nodes}
         arrival_times[starting_stop] = start_time
         
         previous = {node: None for node in self.nodes}
-        
         prio_queue = []
         counter = 0
         
-        # f = g + h, where g is the arrival time and h is the heuristic estimated remaining time
-        f_start = start_time + self.heuristic(starting_stop, ending_stop)
-        heapq.heappush(prio_queue, (f_start, counter, start_time, starting_stop))
+        start_ts = start_time.timestamp()
+        h_start = self.heuristic(starting_stop, goal_stop)
+        f_start = start_ts + h_start
+        heapq.heappush(prio_queue, (f_start, counter, starting_stop))
         
         while prio_queue:
-            _, _, current_arrival_time, current_node = heapq.heappop(prio_queue)
-            logger.info("-------------")
-            logger.info("CURRENT CONSIDERED NODE: %s", current_node.name)
-            if current_node in visited:
-                logger.info("NODE %s WAS ALREADY VISITED.", current_node.name)
-                continue
-            logger.info("ADDED NODE %s TO VISITED", current_node.name)
-            visited.add(current_node)
-            
-            # If reached destination, break out
-            if current_node == ending_stop:
-                arrival_times[ending_stop] = current_arrival_time
+            f, _, current_node = heapq.heappop(prio_queue)
+            if current_node == goal_stop:
                 break
             
+            if current_node in visited:
+                continue
+            visited.add(current_node)
+            
             for edgePath in self.get_edges_paths(current_node):
-                edge: Edge = self.edges.get(edgePath, None)
+                edge: Edge = self.edges.get(edgePath)
                 if not edge:
                     continue
                 neighbor = edgePath[1]
-                logger.info("CONSIDERING NEIGHBOR %s", neighbor)
-                
-                logger.info("CURRENT TIME %s", current_arrival_time)
-                departure_time = edge.get_closest_time_after_given(current_arrival_time)
-                logger.info("CLOSEST DEPARTURE TIME: %s", departure_time)
+                departure_time = edge.get_closest_time_after_given(arrival_times[current_node])
                 if departure_time is None:
                     continue
-                
                 neighbor_arrival_time = departure_time + edge.time_cost
                 
                 if (arrival_times[neighbor] is None or 
                     neighbor_arrival_time < arrival_times[neighbor]):
                     arrival_times[neighbor] = neighbor_arrival_time
                     previous[neighbor] = current_node
+                    neighbor_arrival_ts = neighbor_arrival_time.timestamp()
+                    h_neighbor = self.heuristic(neighbor, goal_stop)
+                    f_neighbor = neighbor_arrival_ts + h_neighbor
                     counter += 1
-                    f = neighbor_arrival_time + self.heuristic(neighbor, ending_stop)
-                    heapq.heappush(prio_queue, (f, counter, neighbor_arrival_time, neighbor))
+                    heapq.heappush(prio_queue, (f_neighbor, counter, neighbor))
         
-        if arrival_times[ending_stop] is None:
+        if arrival_times[goal_stop] is None:
             return None, []
         
-        # Reconstruct the path
         path = []
-        current_node = ending_stop
+        current_node = goal_stop
         while current_node is not None:
             path.insert(0, current_node)
-            current_node = previous.get(current_node)
+            current_node = previous[current_node]
         
-        total_time = arrival_times[ending_stop] - start_time
-        time_finish = time()
-        
-        final_string = \
-        f" \
-        Starting stop: {starting_stop}\n \
-        Ending stop: {ending_stop}\n \
-        Starting time: {start_time.time()}\n \
-        Ending time: {arrival_times[ending_stop].time()}\n \
-        Total travel time: {total_time}\n \
-        Calculation time: {time_finish - time_start} seconds\n \
-        Path taken: {print_path(path)}\n"
+        total_time = arrival_times[goal_stop] - start_time
+        final_string = (
+            f"Starting stop: {starting_stop}\n"
+            f"Ending stop: {goal_stop}\n"
+            f"Starting time: {start_time.time()}\n"
+            f"Ending time: {arrival_times[goal_stop].time()}\n"
+            f"Total time: {total_time}\n"
+            f"Path taken: {print_path(path)}\n"
+        )
         
         return final_string
 
@@ -292,13 +262,13 @@ def load_graph() -> Graph:
 
     with open(FILE_PATH) as f:
         reader = csv.reader(f)
-        next(reader)  # Skip header
+        next(reader) 
 
         for row in reader:
             _, _, company, line, departure_time, arrival_time, start_station, end_station, start_station_lat, start_station_lon, end_station_lat, end_station_lon = row
 
-            departure_time = datetime.strptime(departure_time, TIME_FORMAT)
-            arrival_time = datetime.strptime(arrival_time, TIME_FORMAT)
+            departure_time = datetime.strptime(departure_time, TIME_FORMAT).replace(year = 2000)
+            arrival_time = datetime.strptime(arrival_time, TIME_FORMAT).replace(year = 2000)
 
             starting_node = get_or_create_node(graph, start_station, company, start_station_lat, start_station_lon)
             finish_node = get_or_create_node(graph, end_station, company, end_station_lat, end_station_lon)
@@ -329,12 +299,13 @@ def main():
     graph = load_graph()
     start_station = ("KRZYKI", "MPK Autobusy")
     end_station = ("Bukowskiego", "MPK Autobusy")
-    start_time = datetime.strptime("7:59:00 PM", TIME_FORMAT)
+    start_time = datetime.strptime("7:59:00 PM", TIME_FORMAT).replace(year = 2000)
     print("Graph loaded")
     
     
     print("Dijkstra with t parameter: ")
-    ans = graph.dijkstra(start_station, end_station, 't', start_time)
+    #ans = graph.dijkstra(start_station, end_station, 't', start_time)
+    ans = graph.a_star_t(start_station, end_station, start_time)
     print(ans)
     
     
