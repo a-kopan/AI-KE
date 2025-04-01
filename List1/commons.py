@@ -165,9 +165,100 @@ class Graph:
         
         return final_string
     
+    def dijkstra_p(self, starting_stop_name_and_company, ending_stop_name_and_company, start_time):
+        time_start = time()
+        
+        starting_stop = None
+        ending_stop = None
+        
+        # Get the starting and ending nodes based on their names
+        for node in self.nodes:
+            if node.name == starting_stop_name_and_company[0] and node.company == starting_stop_name_and_company[1]:
+                starting_stop = node
+            if node.name == ending_stop_name_and_company[0] and node.company == ending_stop_name_and_company[1]:
+                ending_stop = node
+        
+        if not starting_stop or not ending_stop:
+            logger.info("STARTING AND/OR ENDING STOP NOT FOUND")
+            return None
+        
+        visited = set()
+        
+        arrival_times = {node: None for node in self.nodes}
+        arrival_times[starting_stop] = start_time
+        
+        line_changes = {node: float('inf') for node in self.nodes}
+        line_changes[starting_stop] = 0
+        
+        previous = {node: None for node in self.nodes}
+        previous_line = {node: None for node in self.nodes}
+        
+        prio_queue = []
+        counter = 0
+        heapq.heappush(prio_queue, (0, start_time, counter, starting_stop, None))
+        
+        while prio_queue:
+            current_changes, current_arrival_time, _, current_node, current_line = heapq.heappop(prio_queue)
+            
+            if current_node in visited:
+                continue
+            visited.add(current_node)
+            
+            if current_node == ending_stop:
+                arrival_times[ending_stop] = current_arrival_time
+                break
+            
+            for edgePath in self.get_edges_paths(current_node):
+                edge = self.edges.get(edgePath, None)
+                if not edge:
+                    continue
+                
+                neighbor = edgePath[1]
+                departure_time = edge.get_closest_time_after_given(current_arrival_time)
+                if departure_time is None:
+                    continue
+                
+                neighbor_arrival_time = departure_time + edge.time_cost
+                new_line_changes = current_changes + (1 if edge.line != current_line else 0)
+                
+                if (new_line_changes < line_changes[neighbor] or
+                    (new_line_changes == line_changes[neighbor] and neighbor_arrival_time < arrival_times[neighbor])):
+                    
+                    line_changes[neighbor] = new_line_changes
+                    arrival_times[neighbor] = neighbor_arrival_time
+                    previous[neighbor] = current_node
+                    previous_line[neighbor] = edge.line
+                    counter += 1
+                    heapq.heappush(prio_queue, (new_line_changes, neighbor_arrival_time, counter, neighbor, edge.line))
+        
+        if arrival_times[ending_stop] is None:
+            return None, []
+        
+        path = []
+        current_node = ending_stop
+        while current_node is not None:
+            path.insert(0, current_node)
+            current_node = previous.get(current_node)
+        
+        total_time = arrival_times[ending_stop] - start_time
+        
+        final_string = f"""
+        Starting stop: {starting_stop}
+        Ending stop: {ending_stop}
+        Starting time: {start_time.time()}
+        Ending time: {arrival_times[ending_stop].time()}
+        Total time: {total_time}
+        Line changes: {line_changes[ending_stop]}
+        Path taken: {print_path(path)}
+        """
+        
+        return final_string
+
     def dijkstra(self, starting_stop, ending_stop, optimization_criterion, start_time):
         if optimization_criterion == 't':
             return self.dijkstra_t(starting_stop, ending_stop, start_time)
+        elif optimization_criterion == 'p':
+            return self.dijkstra_p(starting_stop, ending_stop, start_time)
         else:
             raise ValueError("Invalid optimization criterion")
         
@@ -305,7 +396,8 @@ def main():
     
     print("Dijkstra with t parameter: ")
     #ans = graph.dijkstra(start_station, end_station, 't', start_time)
-    ans = graph.a_star_t(start_station, end_station, start_time)
+    #ans = graph.a_star_t(start_station, end_station, start_time)
+    ans = graph.dijkstra(start_station, end_station, 'p', start_time)
     print(ans)
     
     
