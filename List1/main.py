@@ -3,7 +3,7 @@ import heapq
 from datetime import datetime
 from time import time
 import math
-FILE_PATH = r"data.csv"
+FILE_PATH = r"List1/data.csv"
 TIME_FORMAT = "%I:%M:%S %p"
 
 class Node:
@@ -433,7 +433,7 @@ class Graph:
 def load_graph() -> Graph:
     graph: Graph = Graph()
 
-    with open(FILE_PATH) as f:
+    with open(FILE_PATH, encoding='latin-1') as f:
         reader = csv.reader(f)
         next(reader) 
 
@@ -467,28 +467,18 @@ def print_path(path: list[Node]):
     acc = " -> \n".join(str(node) for node in path)
     return acc
 
-
 def main():
 
     graph = load_graph()
-    start_station = ("KRZYKI", "MPK Autobusy")
-    end_station = ("Broniewskiego", "MPK Autobusy")
+    start_station = ("LITEWSKA", "MPK Autobusy")
+    end_station = ("PETRUSEWICZA", "MPK Autobusy")
     start_time = datetime.strptime("7:59:00 PM", TIME_FORMAT).replace(year = 2000)
     print("Graph loaded")
     
     
     print("TASK 1")
     print("DIJKSTRA TIME")
-    ans = graph.dijkstra(start_station, end_station, 't', start_time)
-    print(ans)
-    print("DIJKSTRA PATH")
-    ans = graph.dijkstra(start_station, end_station, 'p', start_time)
-    print(ans)
-    print("A* TIME")
     ans = graph.a_star_t(start_station, end_station, start_time)
-    print(ans)
-    print("A* PATH")
-    ans = graph.a_star_p(start_station, end_station, start_time)
     print(ans)
       
 if __name__ == '__main__':
